@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcDNA | 机密基因组匹配引擎</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #010409;
+            color: #e6edf3;
+        }
+
+        .mono { font-family: 'JetBrains+Mono', monospace; }
+
+        .glass-panel {
+            background: rgba(13, 17, 23, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(48, 54, 61, 1);
+        }
+
+        /* DNA 动画 */
+        .dna-bar {
+            width: 4px;
+            background: #2f81f7;
+            border-radius: 2px;
+            animation: dna-pulse 1.5s infinite ease-in-out;
+        }
+        @keyframes dna-pulse {
+            0%, 100% { height: 15px; opacity: 0.3; transform: scaleY(1); }
+            50% { height: 50px; opacity: 1; transform: scaleY(1.2); }
+        }
+
+        /* 扫描线 */
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #238636;
+            box-shadow: 0 0 15px #238636;
+            animation: scan 3s infinite linear;
+            z-index: 20;
+        }
+        @keyframes scan { from { top: 0%; } to { top: 100%; } }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 10px; }
+        
+        /* 锁定反馈 */
+        button:disabled, input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed !important;
+            filter: saturate(0);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-12 px-4">
+
+    <!-- Header -->
+    <header class="w-full max-w-5xl flex justify-between items-center mb-12">
+        <div class="flex items-center gap-4">
+            <div class="bg-blue-600 p-2.5 rounded-xl shadow-lg">
+                <i class="fas fa-dna text-white text-2xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">ArcDNA <span class="text-blue-500 font-mono text-sm ml-1">v1.1</span></h1>
+                <p class="text-[9px] text-slate-500 uppercase tracking-widest font-black">Confidential Genomics Protocol</p>
+            </div>
+        </div>
+        <div class="flex flex-col items-end text-right">
+            <div class="bg-slate-900 border border-slate-800 px-4 py-2 rounded-full flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="text-[10px] font-bold text-slate-300">MXE CLUSTER ACTIVE</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+        
+        <!-- Left: Sample Input -->
+        <div class="lg:col-span-5 space-y-6">
+            <div class="glass-panel rounded-3xl p-8 space-y-8 shadow-2xl relative overflow-hidden border-t-2 border-blue-500">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <i class="fas fa-microscope text-blue-500"></i> Genome Lab Input
+                    </h2>
+                    <span class="text-[9px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded font-bold">FHE Mode</span>
+                </div>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-[10px] text-slate-500 mb-2 uppercase font-black tracking-widest">Sequence Fragment (Encrypted Shard)</label>
+                        <div class="relative">
+                            <input type="text" id="dnaInput" value="0x8f2a...c93d1b72e" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-4 text-sm mono text-blue-400 outline-none">
+                            <i class="fas fa-lock absolute right-4 top-1/2 -translate-y-1/2 text-slate-800"></i>
+                        </div>
+                    </div>
+
+                    <!-- DNA 螺旋装饰 -->
+                    <div class="flex items-center justify-center gap-2 py-4">
+                        <div class="dna-bar" style="animation-delay: 0.1s"></div>
+                        <div class="dna-bar" style="animation-delay: 0.2s"></div>
+                        <div class="dna-bar" style="animation-delay: 0.3s"></div>
+                        <div class="dna-bar" style="animation-delay: 0.4s"></div>
+                        <div class="dna-bar" style="animation-delay: 0.5s"></div>
+                        <div class="dna-bar" style="animation-delay: 0.6s"></div>
+                    </div>
+
+                    <button id="matchBtn" class="w-full bg-white text-slate-950 font-black py-5 rounded-2xl hover:bg-blue-50 transition active:scale-[0.98] shadow-xl flex items-center justify-center gap-3">
+                        <i class="fas fa-vial" id="btnIcon"></i> <span id="btnText">RUN CONFIDENTIAL MATCH</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-blue-900/10 border border-blue-500/10 p-6 rounded-2xl">
+                <p class="text-[11px] text-slate-400 leading-relaxed italic">
+                    "在 ArcDNA 协议下，您的原始基因组序列从不离开本地。Arcium 节点仅在密文态下计算汉明距离（Hamming Distance），通过同态选择电路判定相似度。"
+                </p>
+            </div>
+        </div>
+
+        <!-- Right: Process Visualization -->
+        <div class="lg:col-span-7 flex flex-col gap-6">
+            <!-- Telemetry Cards -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="glass-panel p-5 rounded-2xl border-l-2 border-blue-500">
+                    <p class="text-[9px] text-slate-500 uppercase font-black mb-1">Privacy Guarantee</p>
+                    <p class="text-xs font-bold text-blue-400 uppercase">Hamming Zero-Leakage</p>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl border-l-2 border-green-500">
+                    <p class="text-[9px] text-slate-500 uppercase font-black mb-1">MXE Signature</p>
+                    <p class="text-xs font-bold text-green-500 uppercase">Verified on Solana</p>
+                </div>
+            </div>
+
+            <!-- Visualization Main Area -->
+            <div id="displayArea" class="glass-panel rounded-[2.5rem] p-10 flex-1 flex flex-col relative overflow-hidden min-h-[480px]">
+                
+                <!-- Idle State -->
+                <div id="idleState" class="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+                    <div class="w-32 h-32 rounded-full border-2 border-dashed border-slate-800 flex items-center justify-center opacity-30">
+                        <i class="fas fa-search-dna text-5xl"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <h3 class="font-bold text-slate-400 text-sm uppercase tracking-widest">Awaiting Biometric Payload</h3>
+                        <p class="text-[10px] text-slate-600 max-w-xs mx-auto">提交加密序列分片后，Arcium 将在密文空间进行相似度比对。</p>
+                    </div>
+                </div>
+
+                <!-- Processing State -->
+                <div id="computingState" class="hidden flex-1 flex flex-col items-center justify-center space-y-10 relative">
+                    <div class="scan-line"></div>
+                    <div class="flex items-center gap-10">
+                        <div class="w-16 h-16 bg-blue-600 rounded-3xl flex items-center justify-center shadow-2xl animate-pulse">
+                            <i class="fas fa-brain text-white text-3xl"></i>
+                        </div>
+                        <div class="flex flex-col items-center gap-2">
+                            <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">Inference</span>
+                            <div class="h-[1px] w-24 bg-gradient-to-r from-transparent via-slate-600 to-transparent"></div>
+                            <span class="text-[9px] font-black text-slate-700 uppercase tracking-widest mono">FHE-Hamming</span>
+                        </div>
+                        <i class="fas fa-database text-slate-800 text-3xl"></i>
+                    </div>
+                    <div class="text-center space-y-4">
+                        <h3 class="font-black text-blue-400 uppercase tracking-[0.4em] text-xs">正在进行同态基因比对...</h3>
+                        <div class="bg-slate-950/80 px-6 py-2 rounded-full border border-slate-800">
+                            <p class="text-[9px] font-mono text-blue-300" id="statusLog">Sharding input into x25519 fragments...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result State -->
+                <div id="resultState" class="hidden flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in zoom-in duration-500">
+                    <div class="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center border-2 border-green-500 shadow-[0_0_30px_rgba(35,134,54,0.2)]">
+                        <i class="fas fa-check text-green-500 text-3xl"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="text-2xl font-black text-white italic tracking-tight">MATCH SUCCESS</h2>
+                        <p class="text-xs text-slate-400 uppercase font-black tracking-widest">相似度得分：<span class="text-green-500">75% (3/4 Segments)</span></p>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 w-full mono text-[9px] text-blue-400/60 leading-relaxed text-left">
+                        COMP_DEF: 8j22c5...Vth<br>
+                        THRESHOLD: VERIFIED (>= 75%)<br>
+                        DATA_EXPOSURE: ZERO_LEAKAGE
+                    </div>
+                    <button onclick="resetDemo()" class="text-[10px] text-slate-600 hover:text-white transition uppercase font-black tracking-[0.3em] border-b border-transparent hover:border-slate-500 pb-1 mt-4">Reset Lab</button>
+                </div>
+
+                <!-- Telemetry Logs -->
+                <div class="mt-auto pt-8 border-t border-slate-800">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="text-[9px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                            <i class="fas fa-terminal text-blue-500"></i> Network Telemetry
+                        </span>
+                        <span class="text-[9px] mono text-slate-800">CamjN5...QsXqb</span>
+                    </div>
+                    <div id="liveLogs" class="space-y-1.5 h-24 overflow-y-auto custom-scrollbar mono text-[10px] text-slate-600 leading-relaxed">
+                        <!-- Logs inject here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="mt-16 text-slate-800 text-[10px] uppercase tracking-[0.5em] font-black italic text-center">
+        ArcDNA Confidential Infrastructure &copy; 2026 | Built for Humanity
+    </footer>
+
+    <script>
+        const matchBtn = document.getElementById('matchBtn');
+        const btnText = document.getElementById('btnText');
+        const btnIcon = document.getElementById('btnIcon');
+        const dnaInput = document.getElementById('dnaInput');
+        
+        const idleState = document.getElementById('idleState');
+        const computingState = document.getElementById('computingState');
+        const resultState = document.getElementById('resultState');
+        const statusLog = document.getElementById('statusLog');
+        const liveLogs = document.getElementById('liveLogs');
+
+        const phases = [
+            "Generating ephemeral keys for DNA encryption...",
+            "Encrypting genomic vector locally...",
+            "Broadcasting Enc(DNA) to MXE Cluster 456...",
+            "MXE executing compute_dna_similarity circuit...",
+            "Performing homomorphic Hamming comparison...",
+            "Aggregating similarity counts via Mux chain...",
+            "Finalizing verified callback to Program CamjN5..."
+        ];
+
+        function addLiveLog(text, color = 'text-slate-600') {
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const entry = document.createElement('div');
+            entry.className = `${color} pl-2 border-l border-transparent`;
+            entry.innerHTML = `<span class="text-slate-800 mr-2">[${time}]</span> ${text}`;
+            liveLogs.prepend(entry);
+        }
+
+        matchBtn.addEventListener('click', () => {
+            // 锁定交互：计算中不可操作
+            matchBtn.disabled = true;
+            dnaInput.disabled = true;
+            
+            btnText.innerText = "MATCHING IN MXE...";
+            btnIcon.className = "fas fa-spinner fa-spin";
+            
+            idleState.classList.add('hidden');
+            resultState.classList.add('hidden');
+            computingState.classList.remove('hidden');
+
+            addLiveLog("Initiating Confidential DNA Match...", "text-blue-500 font-bold");
+
+            let step = 0;
+            const logInterval = setInterval(() => {
+                statusLog.innerText = phases[step];
+                addLiveLog(`[MXE] ${phases[step]}`);
+                step++;
+                if (step >= phases.length) clearInterval(logInterval);
+            }, 850);
+
+            setTimeout(() => {
+                computingState.classList.add('hidden');
+                resultState.classList.remove('hidden');
+                addLiveLog("🎉 [SUCCESS] Similarity Proof Finalized. Match found.", "text-green-500 font-black");
+                
+                // 恢复按钮状态（但保持输入锁定以模拟单次任务流）
+                btnText.innerText = "MATCH COMPLETED";
+                btnIcon.className = "fas fa-check-double";
+            }, 7000);
+        });
+
+        function resetDemo() {
+            matchBtn.disabled = false;
+            dnaInput.disabled = false;
+            resultState.classList.add('hidden');
+            idleState.classList.remove('hidden');
+            btnText.innerText = "RUN CONFIDENTIAL MATCH";
+            btnIcon.className = "fas fa-vial";
+            addLiveLog("Lab environment reset.");
+        }
+
+        addLiveLog("ArcDNA Genomic Core v1.1 Initialized.");
+        addLiveLog("Connected to Arcium MXE (Cluster Offset 456).");
+    </script>
+</body>
+</html>

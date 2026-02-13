@@ -1,23 +1,37 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
+// Arcium imports for advanced circuit handling (MPC-ready)
+use arcium_client::idl::arcium::types::{CircuitSource, OffChainCircuitSource};
+use arcium_macros::circuit_hash;
+
 const COMP_DEF_OFFSET_DNA: u32 = comp_def_offset("compute_dna_similarity");
 
-declare_id!("CamjN5ifgeAB7mLrpW59rfTHte6eVSRRu6E3K1vQsXqb");
+declare_id!("BQbwqV2LhBNcxLjFwQRXfF8UU1fULKdx87nMQ5m3nQLK");
 
 #[arcium_program]
 pub mod arcdna {
     use super::*;
 
     pub fn init_dna_config(ctx: Context<InitDnaCompDef>) -> Result<()> {
-        init_comp_def(ctx.accounts, None, None)?;
+        // Advanced: Using Off-Chain source for larger genomic circuits to save Gas.
+        // We use the raw GitHub URL so Arcium nodes can fetch the binary circuit file directly.
+        init_comp_def(
+            ctx.accounts, 
+            Some(CircuitSource::OffChain(OffChainCircuitSource {
+                source: "https://raw.githubusercontent.com/Silent-Builder-x/ArcDNA/main/build/compute_dna_similarity.arcis".to_string(),
+                hash: circuit_hash!("compute_dna_similarity"),
+            })), 
+            None
+        )?;
         Ok(())
     }
 
     pub fn request_genomic_match(
         ctx: Context<RequestDnaMatch>,
         computation_offset: u64,
-        dna_shards: [[u8; 32]; 4], // 修正：接收 4 个 32 字节的加密分片
+        user_dna_shards: [[u8; 32]; 4],   // User sample
+        target_dna_shards: [[u8; 32]; 4], // Target sample
         pubkey: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
@@ -27,8 +41,11 @@ pub mod arcdna {
             .x25519_pubkey(pubkey)
             .plaintext_u128(nonce);
         
-        // 修正：此时 s 的类型是 [u8; 32]，符合 encrypted_u64 的要求
-        for s in dna_shards {
+        // Sequentially add encrypted shards to the MPC computation queue
+        for s in user_dna_shards {
+            builder = builder.encrypted_u64(s);
+        }
+        for s in target_dna_shards {
             builder = builder.encrypted_u64(s);
         }
 
@@ -52,13 +69,29 @@ pub mod arcdna {
         ctx: Context<ComputeDnaSimilarityCallback>,
         output: SignedComputationOutputs<ComputeDnaSimilarityOutput>,
     ) -> Result<()> {
-        let _res = match output.verify_output(&ctx.accounts.cluster_account, &ctx.accounts.computation_account) {
+        let o = match output.verify_output(&ctx.accounts.cluster_account, &ctx.accounts.computation_account) {
             Ok(result) => result,
-            Err(_) => return Err(error!(ErrorCode::AbortedComputation)),
+            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
         };
+
+        // Emit privacy-preserving result for client-side decryption
+        emit!(DnaMatchEvent {
+            encrypted_score: o.field_0.ciphertexts[0],
+            encrypted_is_relative: o.field_0.ciphertexts[1],
+            nonce: o.field_0.nonce.to_le_bytes(),
+        });
+        
         msg!("Confidential DNA Matching Completed via MXE.");
         Ok(())
     }
+}
+
+// --- Events ---
+#[event]
+pub struct DnaMatchEvent {
+    pub encrypted_score: [u8; 32],
+    pub encrypted_is_relative: [u8; 32],
+    pub nonce: [u8; 16],
 }
 
 #[queue_computation_accounts("compute_dna_similarity", payer)]

@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-arcdna = "CamjN5ifgeAB7mLrpW59rfTHte6eVSRRu6E3K1vQsXqb"
+arcdna = "F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ"
 
 [registry]
 url = "https://api.apr.dev"

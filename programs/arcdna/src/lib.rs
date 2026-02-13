@@ -7,7 +7,7 @@ use arcium_macros::circuit_hash;
 
 const COMP_DEF_OFFSET_DNA: u32 = comp_def_offset("compute_dna_similarity");
 
-declare_id!("BQbwqV2LhBNcxLjFwQRXfF8UU1fULKdx87nMQ5m3nQLK");
+declare_id!("F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ");
 
 #[arcium_program]
 pub mod arcdna {

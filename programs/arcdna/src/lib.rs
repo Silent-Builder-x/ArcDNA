@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
+// 定义计算定义的偏移量，这必须与你在 Arcium CLI 上传电路时的 ID 对应
 const COMP_DEF_OFFSET_DNA: u32 = comp_def_offset("compute_dna_similarity");
 
 declare_id!("F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ");
@@ -9,79 +10,58 @@ declare_id!("F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ");
 pub mod arcdna {
     use super::*;
 
+    /// 初始化计算定义 (Setup)
     pub fn init_dna_comp_def(ctx: Context<InitDnaCompDef>) -> Result<()> {
         init_comp_def(ctx.accounts, None, None)?;
         Ok(())
     }
 
+    /// 注册用户基因档案
     pub fn register_profile(
         ctx: Context<RegisterProfile>,
-        encrypted_dna_shards: [[u8; 32]; 8],
+        encrypted_dna_shards: [[u8; 32]; 8], 
     ) -> Result<()> {
         let profile = &mut ctx.accounts.profile;
         profile.owner = ctx.accounts.owner.key();
         profile.encrypted_dna_shards = encrypted_dna_shards;
         profile.bump = ctx.bumps.profile;
-        Ok(())
-    }
-
-    pub fn compute_dna_similarity(
-        ctx: Context<ComputeDnaSimilarity>, 
-        computation_offset: u64,
-        ciphertext_user: [[u8; 32]; 8],
-        ciphertext_target: [[u8; 32]; 8],
-        pubkey: [u8; 32],
-        nonce: u128,
-    ) -> Result<()> {
-        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
         
-        let mut builder = ArgBuilder::new()
-            .x25519_pubkey(pubkey)
-            .plaintext_u128(nonce);
-
-        for shard in &ciphertext_user {
-            builder = builder.encrypted_u64(*shard);
-        }
-        for shard in &ciphertext_target {
-            builder = builder.encrypted_u64(*shard);
-        }
-
-        queue_computation(
-            ctx.accounts, 
-            computation_offset,
-            builder.build(),
-            vec![ComputeDnaSimilarityCallback::callback_ix(
-                computation_offset,
-                &ctx.accounts.mxe_account,
-                &[]
-            )?],
-            1,
-            0,
-        )?;
+        msg!("Profile registered for user: {}", profile.owner);
         Ok(())
     }
 
-    pub fn compute_match_with_profile(
-        ctx: Context<ComputeSimilarityWithProfile>,
+    /// 发起匹配请求 (核心逻辑)
+    pub fn request_match(
+        ctx: Context<RequestMatch>, 
         computation_offset: u64,
-        ciphertext_user: [[u8; 32]; 8],
+        ciphertext_user: [[u8; 32]; 8], 
+        encrypted_threshold: [u8; 32], 
         pubkey: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
         let accounts = &mut ctx.accounts.computation;
         accounts.sign_pda_account.bump = ctx.bumps.computation.sign_pda_account;
 
+        // 1. 构建 MPC 参数
         let mut builder = ArgBuilder::new()
             .x25519_pubkey(pubkey)
             .plaintext_u128(nonce);
 
+        // 参数 1: User DNA
         for shard in &ciphertext_user {
             builder = builder.encrypted_u64(*shard);
         }
+
+        // 参数 2: Target DNA
         for shard in &ctx.accounts.target_profile.encrypted_dna_shards {
             builder = builder.encrypted_u64(*shard);
         }
 
+        // 参数 3: MatchParams
+        builder = builder.encrypted_u64(encrypted_threshold);
+
+        // 2. Queue Computation
+        // 修正点：回调结构体必须是 ComputeDnaSimilarityCallback
         queue_computation(
             accounts,
             computation_offset,
@@ -94,35 +74,59 @@ pub mod arcdna {
             1,
             0,
         )?;
+        
+        msg!("Computation queued. Target: {}", ctx.accounts.target_profile.owner);
         Ok(())
     }
 
+    /// 回调函数：处理 MPC 计算结果
+    /// 修正点：函数名必须是 compute_dna_similarity_callback
     #[arcium_callback(encrypted_ix = "compute_dna_similarity")]
     pub fn compute_dna_similarity_callback(
-        ctx: Context<ComputeDnaSimilarityCallback>,
-        output: SignedComputationOutputs<ComputeDnaSimilarityOutput>,
+        ctx: Context<ComputeDnaSimilarityCallback>, // 修正点：结构体名
+        output: SignedComputationOutputs<ComputeDnaSimilarityOutput>, // 修正点：输出结构体通常也是基于指令名生成
     ) -> Result<()> {
+        // 验证计算结果
         let o = match output.verify_output(&ctx.accounts.cluster_account, &ctx.accounts.computation_account) {
             Ok(ComputeDnaSimilarityOutput { field_0 }) => field_0,
             Err(_) => return Err(ErrorCode::AbortedComputation.into()),
         };
 
+        // 解析输出结果
+        // Arcis circuit 返回的是 MatchResult 结构体
+        // Arcium 宏将其展平为 ciphertexts 数组
         let score_bytes: [u8; 8] = o.ciphertexts[0][0..8].try_into().unwrap();
-        let relative_bytes: [u8; 8] = o.ciphertexts[1][0..8].try_into().unwrap();
+        let is_relative_bytes: [u8; 8] = o.ciphertexts[1][0..8].try_into().unwrap();
 
         emit!(DnaMatchEvent {
             score: u64::from_le_bytes(score_bytes),
-            is_relative: u64::from_le_bytes(relative_bytes),
+            is_relative: u64::from_le_bytes(is_relative_bytes) == 1,
             nonce: o.nonce.to_le_bytes(),
+            timestamp: Clock::get()?.unix_timestamp,
         });
+        
         Ok(())
     }
+}
+
+// --- Context Structs (Account Validation) ---
+
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct RequestMatch<'info> {
+    pub computation: ComputeDnaSimilarityBase<'info>,
+    
+    #[account(
+        seeds = [b"profile", target_profile.owner.as_ref()],
+        bump = target_profile.bump
+    )]
+    pub target_profile: Account<'info, UserProfile>,
 }
 
 #[queue_computation_accounts("compute_dna_similarity", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
-pub struct ComputeDnaSimilarity<'info> {
+pub struct ComputeDnaSimilarityBase<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
@@ -135,7 +139,7 @@ pub struct ComputeDnaSimilarity<'info> {
     )]
     pub sign_pda_account: Account<'info, ArciumSignerAccount>,
     #[account(address = derive_mxe_pda!())]
-    pub mxe_account: Box<Account<'info, MXEAccount>>, // 修正：添加 Box
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
     /// CHECK: mempool
     pub mempool_account: UncheckedAccount<'info>,
@@ -157,17 +161,7 @@ pub struct ComputeDnaSimilarity<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-#[derive(Accounts)]
-#[instruction(computation_offset: u64)]
-pub struct ComputeSimilarityWithProfile<'info> {
-    pub computation: ComputeDnaSimilarity<'info>,
-    #[account(
-        seeds = [b"profile", target_profile.owner.as_ref()],
-        bump = target_profile.bump
-    )]
-    pub target_profile: Account<'info, UserProfile>,
-}
-
+// 修正点：结构体名必须是 ComputeDnaSimilarityCallback
 #[callback_accounts("compute_dna_similarity")]
 #[derive(Accounts)]
 pub struct ComputeDnaSimilarityCallback<'info> {
@@ -175,7 +169,7 @@ pub struct ComputeDnaSimilarityCallback<'info> {
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_DNA))]
     pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
     #[account(address = derive_mxe_pda!())]
-    pub mxe_account: Box<Account<'info, MXEAccount>>, // 修正：添加 Box
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     /// CHECK: computation_account
     pub computation_account: UncheckedAccount<'info>,
     #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
@@ -191,7 +185,7 @@ pub struct InitDnaCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]
-    pub mxe_account: Box<Account<'info, MXEAccount>>, // 修正：添加 Box
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut)]
     /// CHECK: comp_def
     pub comp_def_account: UncheckedAccount<'info>,
@@ -220,6 +214,8 @@ pub struct RegisterProfile<'info> {
     pub system_program: Program<'info, System>,
 }
 
+// --- Data Structures ---
+
 #[account]
 pub struct UserProfile {
     pub owner: Pubkey,
@@ -230,8 +226,9 @@ pub struct UserProfile {
 #[event]
 pub struct DnaMatchEvent {
     pub score: u64,
-    pub is_relative: u64,
+    pub is_relative: bool,
     pub nonce: [u8; 16],
+    pub timestamp: i64,
 }
 
 #[error_code]

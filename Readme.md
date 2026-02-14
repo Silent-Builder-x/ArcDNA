@@ -1,48 +1,86 @@
-# ArcDNA: Confidential Genomic Matching Protocol via MPC
+# ArcDNA: The "Blind" Genomic Matching Protocol 🧬
 
-## 🧬 Overview
+## 📖 Overview
 
-**ArcDNA** is a privacy-preserving infrastructure for genomic similarity analysis built on **Arcium** and **Solana**.
+**ArcDNA** is a privacy-first genomic infrastructure built on **Arcium** and **Solana**. It solves the "Genomic Privacy Paradox": *To find genetic relatives or cure diseases, we must expose our most sensitive biological data to centralized databases.*
 
-Genomic data is the most sensitive information a human possesses. Traditional DNA matching services require users to upload their raw genetic sequences to centralized databases, creating permanent privacy risks. **ArcDNA** utilizes **Secure Multi-Party Computation (MPC)** to compute genetic similarity entirely on encrypted data. Platforms and nodes never see the raw sequences—only the authorized matching results are revealed.
+ArcDNA implements a **"Blind Bio-Lab"**:
 
-## 🚀 Live Deployment Status (Devnet)
+1. Users encrypt their DNA locally into **Secret Shares**.
+2. The **Arcium MXE Network** computes similarity (Hamming Distance) on these shares.
+3. **No raw DNA sequence is ever revealed**—not to the platform, not to the counterparty, and not to the blockchain.
 
-The protocol is fully operational and verified on the Arcium Devnet.
+> *"Compute on the data, without seeing the data."*
 
-- **MXE Address:** `H6ri1pKhvGiqapvabZwtThmWNCKcCjw3sw1w17iN8kmy`
-- **MXE Program ID:** `CamjN5ifgeAB7mLrpW59rfTHte6eVSRRu6E3K1vQsXqb`
-- **Computation Definition:** `8j22c52iXewM516KwjTwpZYDmmkoef6m8coDW14MjVth`
-- **Status:** `Active`
+## 🚀 Live Demo & Deployment
 
-## 🧠 Core Innovation: The "Blind" Bio-Lab
+The protocol logic is verified on the Arcium Devnet v0.8.3.
 
-ArcDNA implements a secure genomic primitive based on the **Hamming Distance** algorithm:
+### 🖥️ Try the Experience
 
-- **Shielded Sequences:** DNA feature vectors are encrypted locally using ephemeral session keys. The Solana ledger only receives ciphertext shards.
-- **MPC Comparison:** The Arcis circuit iterates through encrypted genome fragments using constant-time multiplexers (`if-else` mux) to calculate similarity without leaking intermediate data.
-- **Verifiable Proofs:** Final match results are computed by the Arcium Multi-Party Execution (MXE) Network and committed to the Solana ledger via verified callbacks.
+We have built a fully interactive visualization of the MPC process.
+[Launch Blind Bio-Lab Demo](https://silent-builder-x.github.io/ArcDNA/)
 
-## 🛠 Build & Implementation
+## 🧠 Core Innovation
+
+### 1. Client-Side Sharding (The "Glass Break" Technique)
+
+Before a genome leaves the user's device, it is mathematically split into `n` shards using Shamir's Secret Sharing (or additive sharing for this circuit).
+
+- **User A's DNA:** `AGCT...` -> `[Shard 1, Shard 2, Shard 3]`
+- **Network View:** Random noise.
+
+### 2. Homomorphic Hamming Circuit
+
+The Arcis circuit (`src/lib.rs`) iterates through encrypted genome vectors using constant-time operations.
+
+- **Input:** `Encrypted<User_Vector>`, `Encrypted<Target_Vector>`
+- **Logic:** `Mux(User[i] == Target[i], Score + 1, Score)`
+- **Output:** `Encrypted<Similarity_Score>`
+
+### 3. Solana Verification Layer
+
+The Anchor program orchestrates the workflow, verifying that the computation was performed by authorized Arcium nodes (via signature verification) before releasing the result event.
+
+## 🛠 Architecture
 
 ```
-# Compile Arcis circuits and Solana program
+graph LR
+    A[User Client] -- 1. Encrypt & Shard --> B(Solana Program)
+    B -- 2. Queue Computation --> C{Arcium MXE Cluster}
+    C -- 3. MPC Execution --> C
+    C -- 4. Callback with Proof --> B
+    B -- 5. Emit Match Event --> A
+
+```
+
+## ⚙️ Build & Reproduction
+
+### Prerequisites
+
+- Rust `1.75+`
+- Solana CLI `3.1.8+`
+- Arcium CLI `0.8.3`
+
+### 1. Build Circuit & Program
+
+```
+# Compile the Arcis circuit and Anchor program
 arcium build
 
-# Deploy to Cluster
+```
+
+### 2. Deploy to Arcium Devnet
+
+```
+# Upload computation definition
 arcium deploy --cluster-offset 456 --recovery-set-size 4 --keypair-path ~/.config/solana/id.json -u d
 
 ```
 
-## 📄 Technical Specification (v0.8.3)
+## 📄 Technical Specification (v1.1)
 
-- **Engine:** `compute_dna_similarity` (Arcis-MPC Circuit)
-- **Security:** Supported by Arcium MPC threshold signatures.
-- **Protocol Version:** `v0.8.3`
-
-## ⚙️ Development Environment
-
-- **Arcium CLI:** `0.8.3`
-- **Anchor Framework:** `0.30.1`
-- **Cluster:** Arcium Devnet (`-u d`)
+- **Engine:** `compute_dna_similarity` (Arcis-MPC)
+- **Encryption Scheme:** Linear Secret Sharing (LSS)
+- **Privacy Guarantee:** Information-Theoretic Security for inputs.
 - **Compliance:** Built following Arcium Standards with verified `/// CHECK:` safety comments.

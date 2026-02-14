@@ -5,32 +5,32 @@ mod circuits {
     use arcis::*;
 
     pub struct GenomeData {
-        // 将 DNA 序列视为 8 个 64 位的片段
-        // 实际应用中可以是数百万个 u64
+        // Treat DNA sequences as 8 segments of 64-bit integers
+        // In real applications, this could be millions of u64 values
         pub sequences: [u64; 8],
     }
 
     pub struct MatchParams {
-        pub threshold: u64, // 动态允许的匹配阈值
+        pub threshold: u64, // Dynamically allowed matching threshold
     }
 
-    /// 比对结果结构
+    /// Structure for comparison results
     pub struct MatchResult {
-        pub matching_segments: u64, // 匹配成功的片段数量
-        pub is_relative: bool,      // 是否判定为亲属 (1=true, 0=false)
+        pub matching_segments: u64, // Number of successfully matched segments
+        pub is_relative: bool,      // Whether determined as a relative (1=true, 0=false)
     }
 
-    /// 核心指令：隐私保护下的 DNA 相似度计算
+    /// Core instruction: Privacy-preserving DNA similarity computation
     /// 
-    /// 原理 (MPC):
-    /// 1. 数据以 Secret Shares 形式进入计算节点。
-    /// 2. 节点间通过通信协议计算相等性，不泄露任何一方的原始数据。
-    /// 3. 输出也是加密状态，只有拥有私钥的用户能解密结果。
+    /// Principle (MPC):
+    /// 1. Data enters the computation nodes in the form of Secret Shares.
+    /// 2. Nodes compute equality through communication protocols without revealing any party's raw data.
+    /// 3. The output is also in an encrypted state, and only users with the private key can decrypt the result.
     #[instruction]
     pub fn compute_dna_similarity(
         user_dna: Enc<Shared, GenomeData>,
         target_dna: Enc<Shared, GenomeData>,
-        params: Enc<Shared, MatchParams> // 新增：支持动态传参
+        params: Enc<Shared, MatchParams> // New: Support dynamic parameters
     ) -> Enc<Shared, MatchResult> {
         let user = user_dna.to_arcis();
         let target = target_dna.to_arcis();
@@ -38,18 +38,18 @@ mod circuits {
         
         let mut score = 0u64;
 
-        // 并行比对电路
-        // 在 MPC 算术电路中，相等性检查 (a == b) 通常会被编译为减法与零检查
+        // Parallel comparison circuit
+        // In MPC arithmetic circuits, equality checks (a == b) are usually compiled as subtraction and zero checks
         for i in 0..8 {
-            // 比较两个基因片段是否完全一致
+            // Compare whether two gene segments are completely identical
             let is_match = user.sequences[i] == target.sequences[i];
             
-            // 累加匹配分数
+            // Accumulate matching score
             score = if is_match { score + 1 } else { score };
         }
 
-        // 阈值判定逻辑
-        // 如果匹配片段 >= 阈值，则认为是亲属
+        // Threshold determination logic
+        // If matching segments >= threshold, it is considered a relative
         let is_rel = score >= p.threshold;
 
         let result = MatchResult {
@@ -57,7 +57,7 @@ mod circuits {
             is_relative: is_rel,
         };
 
-        // 结果仅对发起计算的用户可见 (re-encrypted for the caller)
+        // The result is only visible to the user who initiated the computation (re-encrypted for the caller)
         user_dna.owner.from_arcis(result)
     }
 }

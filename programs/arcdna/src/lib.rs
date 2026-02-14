@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
-// 定义计算定义的偏移量，这必须与你在 Arcium CLI 上传电路时的 ID 对应
+// Define the computation definition offset, which must correspond to the ID when uploading the circuit in the Arcium CLI
 const COMP_DEF_OFFSET_DNA: u32 = comp_def_offset("compute_dna_similarity");
 
 declare_id!("F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ");
@@ -10,13 +10,13 @@ declare_id!("F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ");
 pub mod arcdna {
     use super::*;
 
-    /// 初始化计算定义 (Setup)
+    /// Initialize the computation definition (Setup)
     pub fn init_dna_comp_def(ctx: Context<InitDnaCompDef>) -> Result<()> {
         init_comp_def(ctx.accounts, None, None)?;
         Ok(())
     }
 
-    /// 注册用户基因档案
+    /// Register user genetic profile
     pub fn register_profile(
         ctx: Context<RegisterProfile>,
         encrypted_dna_shards: [[u8; 32]; 8], 
@@ -30,7 +30,7 @@ pub mod arcdna {
         Ok(())
     }
 
-    /// 发起匹配请求 (核心逻辑)
+    /// Submit a matching request (Core logic)
     pub fn request_match(
         ctx: Context<RequestMatch>, 
         computation_offset: u64,
@@ -42,26 +42,26 @@ pub mod arcdna {
         let accounts = &mut ctx.accounts.computation;
         accounts.sign_pda_account.bump = ctx.bumps.computation.sign_pda_account;
 
-        // 1. 构建 MPC 参数
+        // 1. Build MPC parameters
         let mut builder = ArgBuilder::new()
             .x25519_pubkey(pubkey)
             .plaintext_u128(nonce);
 
-        // 参数 1: User DNA
+        // Parameter 1: User DNA
         for shard in &ciphertext_user {
             builder = builder.encrypted_u64(*shard);
         }
 
-        // 参数 2: Target DNA
+        // Parameter 2: Target DNA
         for shard in &ctx.accounts.target_profile.encrypted_dna_shards {
             builder = builder.encrypted_u64(*shard);
         }
 
-        // 参数 3: MatchParams
+        // Parameter 3: MatchParams
         builder = builder.encrypted_u64(encrypted_threshold);
 
         // 2. Queue Computation
-        // 修正点：回调结构体必须是 ComputeDnaSimilarityCallback
+        // Fix: The callback structure must be ComputeDnaSimilarityCallback
         queue_computation(
             accounts,
             computation_offset,
@@ -79,22 +79,22 @@ pub mod arcdna {
         Ok(())
     }
 
-    /// 回调函数：处理 MPC 计算结果
-    /// 修正点：函数名必须是 compute_dna_similarity_callback
+    /// Callback function: Process MPC computation results
+    /// Fix: The function name must be compute_dna_similarity_callback
     #[arcium_callback(encrypted_ix = "compute_dna_similarity")]
     pub fn compute_dna_similarity_callback(
-        ctx: Context<ComputeDnaSimilarityCallback>, // 修正点：结构体名
-        output: SignedComputationOutputs<ComputeDnaSimilarityOutput>, // 修正点：输出结构体通常也是基于指令名生成
+        ctx: Context<ComputeDnaSimilarityCallback>, // Fix: Structure name
+        output: SignedComputationOutputs<ComputeDnaSimilarityOutput>, // Fix: Output structure is usually generated based on the instruction name
     ) -> Result<()> {
-        // 验证计算结果
+        // Verify computation results
         let o = match output.verify_output(&ctx.accounts.cluster_account, &ctx.accounts.computation_account) {
             Ok(ComputeDnaSimilarityOutput { field_0 }) => field_0,
             Err(_) => return Err(ErrorCode::AbortedComputation.into()),
         };
 
-        // 解析输出结果
-        // Arcis circuit 返回的是 MatchResult 结构体
-        // Arcium 宏将其展平为 ciphertexts 数组
+        // Parse output results
+        // The Arcis circuit returns a MatchResult structure
+        // The Arcium macro flattens it into a ciphertexts array
         let score_bytes: [u8; 8] = o.ciphertexts[0][0..8].try_into().unwrap();
         let is_relative_bytes: [u8; 8] = o.ciphertexts[1][0..8].try_into().unwrap();
 
@@ -161,7 +161,7 @@ pub struct ComputeDnaSimilarityBase<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-// 修正点：结构体名必须是 ComputeDnaSimilarityCallback
+// Fix: The structure name must be ComputeDnaSimilarityCallback
 #[callback_accounts("compute_dna_similarity")]
 #[derive(Accounts)]
 pub struct ComputeDnaSimilarityCallback<'info> {

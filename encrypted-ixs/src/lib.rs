@@ -4,17 +4,17 @@ use arcis::*;
 mod circuits {
     use arcis::*;
 
-    // A simplified representation of genomic data using 4x64-bit hashes.
-    // In a real-world scenario, this could be a Bloom filter or MinHash of the genome.
     pub struct GenomeData {
-        pub sequences: [u64; 4], // 4 segments of highly sensitive genomic feature hashes
+        pub sequences: [u64; 8],
     }
 
+    /// 比对结果结构
     pub struct MatchResult {
-        pub similarity_score: u64, // Number of matching segments
-        pub is_relative: u64,      // 1 if match >= threshold, 0 otherwise
+        pub similarity_score: u64, // 匹配成功的片段数量
+        pub is_relative: u64,      // 阈值判定标识
     }
 
+    /// 核心指令：在不解密的情况下计算汉明相似度
     #[instruction]
     pub fn compute_dna_similarity(
         user_dna_ctxt: Enc<Shared, GenomeData>,
@@ -25,23 +25,23 @@ mod circuits {
         
         let mut score = 0u64;
 
-        // Execute secure Hamming Distance calculation in MPC
-        for i in 0..4 {
+        // 执行并行比对电路：计算两个序列中相同片段的数量
+        // 汉明距离 = 总长度 - score
+        for i in 0..8 {
             let is_match = user.sequences[i] == target.sequences[i];
             
-            // Use Mux (Multiplexer) logic supported by Arcis for encrypted accumulation
             score = if is_match { score + 1 } else { score };
         }
 
-        // Threshold check: if match count >= 3, flag as highly similar (relative)
-        let relative_flag = if score >= 3 { 1u64 } else { 0u64 };
+        // 阈值判定：如果匹配片段 >= 6 (75% 相似度)，判定为亲属
+        let relative_flag = if score >= 6 { 1u64 } else { 0u64 };
 
         let result = MatchResult {
             similarity_score: score,
             is_relative: relative_flag,
         };
 
-        // Return the result encrypted with the Shared key (only accessible by the invoker)
+        // 将结果重新加密并返回给请求者
         user_dna_ctxt.owner.from_arcis(result)
     }
 }

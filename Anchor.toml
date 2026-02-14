@@ -8,12 +8,18 @@ skip-lint = false
 [programs.localnet]
 arcdna = "F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ"
 
+[programs.devnet]
+arcdna = "F2ZMuc2KsqmLKk3kmheq7HvkzHy5Ltn8GrYKUJQXcAQJ"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+
+[test]
+startup_wait = 60000
